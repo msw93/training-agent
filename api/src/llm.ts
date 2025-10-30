@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
+import OpenAI from 'openai';
 
 // Provider-agnostic interface
 export interface LlmPlanInput {
@@ -62,8 +63,45 @@ class RuleBasedPlanner implements LlmPlanner {
 
 export function makePlanner(): LlmPlanner {
   const openaiKey = process.env.OPENAI_API_KEY;
-  // Placeholder: in future, return an OpenAI-based planner if key present
-  // For now, always use the rule-based fallback to avoid external calls.
+  if (openaiKey) {
+    class OpenAIPlanner implements LlmPlanner {
+      private client: OpenAI;
+      constructor(apiKey: string) {
+        this.client = new OpenAI({ apiKey });
+      }
+      async generateWeekPlan(input: LlmPlanInput): Promise<LlmPlanOutputItem[]> {
+        const system = `You are a training planner. Output strict JSON only: an array of items with keys title_short, start_local (ISO string), end_local (ISO string), description (multi-line string that includes: Duration, Targets, Intervals, Notes, TSS, kcal). Do not include Markdown or commentary.`;
+        const user = `Plan next week given this prompt: "${input.prompt}". Assume America/Toronto timezone. Keep events within 06:00–21:00 weekdays and 07:00–21:00 weekends. Prefer avoiding conflicts with work; the API will check conflicts again.`;
+        const resp = await this.client.chat.completions.create({
+          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          temperature: 0.2,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user }
+          ],
+          response_format: { type: 'json_object' as any }
+        });
+        const content = resp.choices?.[0]?.message?.content || '[]';
+        let parsed: any = [];
+        try {
+          // Some models wrap in an object; accept both array or object.items
+          const obj = JSON.parse(content);
+          parsed = Array.isArray(obj) ? obj : (obj.items || obj.plan || []);
+        } catch {
+          parsed = [];
+        }
+        // Basic shape enforcement
+        const items: LlmPlanOutputItem[] = (parsed || []).map((it: any) => ({
+          title_short: String(it.title_short || ''),
+          start_local: String(it.start_local || ''),
+          end_local: String(it.end_local || ''),
+          description: String(it.description || '')
+        })).filter(i => i.title_short && i.start_local && i.end_local && i.description);
+        return items;
+      }
+    }
+    return new OpenAIPlanner(openaiKey);
+  }
   return new RuleBasedPlanner();
 }
 

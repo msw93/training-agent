@@ -21,6 +21,7 @@
     "express": "^5.1.0",
     "google-auth-library": "^10.4.2",
     "googleapis": "^164.1.0",
+    "openai": "^6.7.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3",
     "uuid": "^9.0.1"

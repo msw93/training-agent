@@ -62,6 +62,14 @@ Tokens are persisted to `api/tokens.json` (dev only).
 
 - `POST /api/llm/plan` — input: `{ "prompt": "Plan next week; prefer long ride Saturday, long run Friday." }` → output: create proposals + combined diff. Uses a rule-based fallback planner (no external API). Future: OpenAI via `OPENAI_API_KEY`.
 
+### LLM configuration
+
+- Optional environment variables (in `api/.env`):
+  - `OPENAI_API_KEY=...`
+  - `OPENAI_MODEL=gpt-4o-mini` (default)
+
+If `OPENAI_API_KEY` is present, the planner uses OpenAI; otherwise it falls back to the internal rule-based planner. The API still enforces validations/conflict policies on all generated items.
+
 ## Policies enforced (server-side)
 
 - Writes only to `TRAINING_CALENDAR_ID`.
