@@ -19,6 +19,8 @@ import {
   rejectProposal
 } from './approvals';
 import { planWeek } from './plan';
+import { makePlanner } from './llm';
+import { proposeCreateInternal } from './approvals';
 
 dotenv.config();
 
@@ -89,6 +91,30 @@ app.post('/api/approvals/reject', rejectProposal);
 
 // Weekly plan stub (proposals only)
 app.post('/api/plan/week', planWeek);
+
+// LLM endpoint: accept NL prompt, return proposals + combined diff
+app.post('/api/llm/plan', async (req, res) => {
+  try {
+    const { prompt } = req.body || {};
+    if (!prompt) return res.status(400).json({ message: 'Missing prompt' });
+    const planner = makePlanner();
+    const items = await planner.generateWeekPlan({ prompt });
+    const results: Array<{ id: string; diff: string }> = [];
+    const errors: Array<{ title: string; error: string }> = [];
+    for (const it of items) {
+      try {
+        const { proposal, diff } = await proposeCreateInternal(it);
+        results.push({ id: proposal.id, diff });
+      } catch (e: any) {
+        errors.push({ title: it.title_short, error: e.message });
+      }
+    }
+    const combinedDiff = results.map(r => r.diff).join('\n');
+    return res.status(200).json({ proposals: results, combinedDiff, errors });
+  } catch (e: any) {
+    return res.status(500).json({ message: 'LLM plan failed', error: e.message });
+  }
+});
 
 // TODO: Add more (weather, holidays, notification etc.)
 
