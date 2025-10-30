@@ -58,6 +58,10 @@ Tokens are persisted to `api/tokens.json` (dev only).
   - `POST /api/approvals/approve`
   - `POST /api/approvals/reject`
 
+## LLM endpoints
+
+- `POST /api/llm/plan` — input: `{ "prompt": "Plan next week; prefer long ride Saturday, long run Friday." }` → output: create proposals + combined diff. Uses a rule-based fallback planner (no external API). Future: OpenAI via `OPENAI_API_KEY`.
+
 ## Policies enforced (server-side)
 
 - Writes only to `TRAINING_CALENDAR_ID`.
