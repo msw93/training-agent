@@ -9,20 +9,48 @@ import {
 import { tokensExist, createEventOnTrainingCalendar, updateEventOnTrainingCalendar, deleteEventFromTrainingCalendar, listTrainingCalendarEvents, DEFAULT_TIMEZONE, fetchPrimaryBusy, fetchPrimaryEvents, fetchTrainingEvent } from './google';
 import { validateWorkoutDescription } from './validation';
 
+function parseTimeFromISO(iso: string): { hour: number; minute: number; day: number } {
+  // Extract time from ISO string directly to avoid timezone conversion
+  const timeMatch = iso.match(/T(\d{2}):(\d{2})/);
+  if (timeMatch) {
+    const hour = parseInt(timeMatch[1], 10);
+    const minute = parseInt(timeMatch[2], 10);
+    const dateMatch = iso.match(/(\d{4}-\d{2}-\d{2})/);
+    const dateStr = dateMatch ? dateMatch[1] : '';
+    const date = new Date(dateStr + 'T00:00:00');
+    return { hour, minute, day: date.getDay() };
+  }
+  const d = new Date(iso);
+  return { hour: d.getHours(), minute: d.getMinutes(), day: d.getDay() };
+}
+
 function isWeekend(date: Date) {
   const d = date.getDay();
   return d === 0 || d === 6;
 }
 
 function withinAllowedHours(startIso: string, endIso: string) {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  const startHour = start.getHours();
-  const endHour = end.getHours();
-  const weekend = isWeekend(start);
-  const minHour = weekend ? 7 : 6;
-  const maxHour = 21; // inclusive end boundary at 21:00 local
-  return startHour >= minHour && endHour <= maxHour;
+  const start = parseTimeFromISO(startIso);
+  const end = parseTimeFromISO(endIso);
+  const weekend = start.day === 0 || start.day === 6;
+  
+  // Morning slot: 6:30 AM - 9:30 AM
+  const morningStart = start.hour > 6 || (start.hour === 6 && start.minute >= 30);
+  const morningEnd = end.hour < 9 || (end.hour === 9 && end.minute <= 30);
+  const isMorning = morningStart && morningEnd;
+  
+  if (!weekend) {
+    // Weekdays: Morning (6:30-9:30 AM) OR evening (6:00 PM onwards)
+    // Block afternoon: 9:30 AM - 6:00 PM
+    if (isMorning) return true;
+    
+    // Evening: 6:00 PM (18:00) or later
+    const eveningStart = start.hour >= 18;
+    return eveningStart;
+  }
+  
+  // Weekends: ANY time is allowed (validation passes for all weekend times)
+  return true;
 }
 
 function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string) {
@@ -144,9 +172,21 @@ export const listPrimaryBusy = async (req: Request, res: Response) => {
 export const listTrainingEvents = async (req: Request, res: Response) => {
   if (!tokensExist()) return res.status(401).json({ message: 'Not authenticated with Google. Visit /api/calendar/connect' });
   try {
-    const events = await listTrainingCalendarEvents();
+    const { max_results } = req.query as any;
+    const maxResults = max_results ? parseInt(max_results, 10) : 20;
+    console.log(`[listTrainingEvents] Requesting ${maxResults} events`);
+    const events = await listTrainingCalendarEvents({ maxResults: Math.min(maxResults, 20) });
+    console.log(`[listTrainingEvents] Received ${events.length} events from Google Calendar`);
+    console.log(`[listTrainingEvents] Events summary:`, events.map((e: any) => ({
+      id: e.id,
+      summary: e.summary,
+      start: e.start?.dateTime || e.start?.date,
+      end: e.end?.dateTime || e.end?.date,
+      status: e.status
+    })));
     return res.status(200).json({ events });
   } catch (e: any) {
+    console.error(`[listTrainingEvents] Error:`, e);
     return res.status(500).json({ message: 'Failed to list events', error: e.message });
   }
 };

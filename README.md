@@ -88,8 +88,8 @@ If `OPENAI_API_KEY` is present, the planner uses OpenAI; otherwise it falls back
 - [x] Deletion guard for "Race"
 - [x] Approval/diff workflow (propose/list/approve/reject)
 - [x] Description validator (duration, targets, intervals, notes, TSS, kcal)
-- [ ] Weekly "Plan" stub to generate multi-event proposals + combined diff
-- [ ] Natural-language modify-day/week stubs (no-op planner + approval)
+- [x] Weekly "Plan" endpoint to generate multi-event proposals + combined diff (LLM-powered)
+- [x] Natural-language modify-day/week endpoint (LLM-powered with approval workflow)
 - [ ] Weather commute stub (API, daily check, make-up mileage proposal)
 - [ ] Holiday and Toronto pool hours stubs
 - [ ] Notifications stub (push)
