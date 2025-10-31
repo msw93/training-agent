@@ -68,13 +68,14 @@ Tokens are persisted to `api/tokens.json` (dev only).
 
 ## LLM endpoints
 
-- `POST /api/llm/plan` — input: `{ "prompt": "Plan next week; prefer long ride Saturday, long run Friday." }` → output: create proposals + combined diff. Uses a rule-based fallback planner (no external API). Future: OpenAI via `OPENAI_API_KEY`.
+- `POST /api/llm/plan` — Generate a new weekly training plan. Input: `{ "prompt": "Plan 9 workouts for next week: 3 swims, 3 runs, and 3 rides." }` → Output: create proposals + combined diff. Uses OpenAI (if `OPENAI_API_KEY` is set) or falls back to rule-based planner.
+- `POST /api/llm/modify` — Modify existing workouts using natural language. Input: `{ "prompt": "Move Monday's swim to Tuesday morning", "existingEvents": [...] }` → Output: modification proposals (update/delete/create) + combined diff.
 
 ## Weather endpoints
 
-- `POST /api/weather/check` — Check weather for multiple workouts. Input: `{ "workouts": [{ "title": "...", "description": "...", "start_local": "..." }] }`. Returns weather forecasts for each workout.
+- `POST /api/weather/check` — Check weather for multiple workouts. Input: `{ "workouts": [{ "title": "...", "description": "...", "start_local": "..." }] }`. Returns weather forecasts for each workout. Uses Open-Meteo (free, no API key required).
 - `POST /api/weather/check-single` — Check weather for a single workout.
-- `POST /api/weather/reschedule-bad-weather` — Auto-generate reschedule proposals for workouts with bad weather conditions.
+- `POST /api/weather/reschedule-bad-weather` — Auto-generate reschedule proposals for workouts with bad weather conditions (outdoor runs/rides only).
 
 ### LLM configuration
 
@@ -84,36 +85,101 @@ Tokens are persisted to `api/tokens.json` (dev only).
 
 If `OPENAI_API_KEY` is present, the planner uses OpenAI; otherwise it falls back to the internal rule-based planner. The API still enforces validations/conflict policies on all generated items.
 
+**Model Recommendations:**
+- `gpt-4o-mini` (default): Fast, cheap, good for structured JSON generation
+- `gpt-4o`: Better reasoning and JSON adherence, slightly slower/more expensive
+- `gpt-4-turbo`: Good balance of speed and quality
+
+## Frontend: Run locally
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000/plan-week](http://localhost:3000/plan-week) to access the planning interface.
+
 ## Policies enforced (server-side)
 
 - Writes only to `TRAINING_CALENDAR_ID`.
-- Conflict policy vs. primary calendar: overlaps are blocked unless the primary event title contains "Lunch" (case-insensitive).
-- Allowed hours: weekdays 06:00–21:00, weekends 07:00–21:00 (local).
+- Conflict policy vs. primary calendar: overlaps are blocked unless the primary event title contains "Lunch" (case-insensitive). All-day events show as warnings (not blockers).
+- Allowed hours:
+  - Weekdays: Morning 6:30 AM - 9:30 AM OR Evening 6:00 PM onwards (no afternoon workouts)
+  - Weekends: Any time (bias for mornings, especially for long workouts)
 - Never delete events that contain "Race" in the title.
-- Description content validation: planned (see roadmap).
+- Description validation: Must include Duration, Distance, Time, Targets, Intervals, Notes, TSS, and kcal fields.
+- Auto-rescheduling: Workouts that conflict or violate time slots are automatically rescheduled to valid slots.
+- Event spacing: Minimum 30-minute gap between events (except brick workouts: bike → run allowed back-to-back).
 
 ## Feature Progress
 
-- [x] Google OAuth (tokens persisted locally) and calendar list test
+### ✅ Completed (MVP+)
+
+**Backend:**
+- [x] Google OAuth (tokens persisted locally)
 - [x] Training calendar ID wiring (writes restricted to this calendar)
 - [x] CRUD endpoints for training events (Google Calendar)
 - [x] Primary calendar FreeBusy/events for conflict checks
 - [x] Conflict policy (Lunch exception) and allowed-hours guardrails
-- [x] Deletion guard for "Race"
-- [x] Approval/diff workflow (propose/list/approve/reject)
+- [x] All-day events treated as warnings (not blockers)
+- [x] Deletion guard for "Race" events
+- [x] Approval/diff workflow (propose/list/approve/reject with GitHub-style diffs)
 - [x] Description validator (duration, targets, intervals, notes, TSS, kcal)
 - [x] Weekly "Plan" endpoint to generate multi-event proposals + combined diff (LLM-powered)
 - [x] Natural-language modify-day/week endpoint (LLM-powered with approval workflow)
-- [x] Weather integration (OpenWeatherMap API, visual forecasts, bad weather detection for outdoor workouts)
-- [ ] Holiday and Toronto pool hours stubs
-- [ ] Notifications stub (push)
-- [ ] Exporters (.ZWO etc.)
+- [x] Auto-scheduling/rescheduling for conflicts and invalid time slots
+- [x] Event spacing validation (30-minute gaps, brick workout exceptions)
+- [x] Weather integration (Open-Meteo API, no key required, visual forecasts, bad weather detection for outdoor workouts)
+- [x] Timezone handling (consistent ISO string parsing to avoid conversion issues)
 
-## Next up
+**Frontend:**
+- [x] Planning interface with unified input (generate new plan / modify existing)
+- [x] Proposals approval UI with GitHub-style diffs
+- [x] Calendar week view (Google Calendar-style visual)
+- [x] Events list table with weather badges
+- [x] Event details modal
+- [x] Toast notifications
+- [x] Loading skeletons
+- [x] Tab navigation (Plan & Modify / Calendar View)
+- [x] Weather badges for all workouts
+- [x] Reset/delete next week button
 
-1) Description validator on create/update (reject or auto-augment description).
-2) Weekly Plan generator (mock rules) that emits a set of create proposals with a readable diff.
-3) Simple frontend surface to view proposals, diffs, and approve.
+### 🚧 Incomplete / Planned
+
+- [ ] Holiday and Toronto pool hours integration
+- [ ] Notifications (push notifications for upcoming workouts)
+- [ ] Exporters (.ZWO files for Zwift, TrainingPeaks, etc.)
+- [ ] Multi-calendar support (currently Google Calendar only)
+- [ ] Template/plan library
+- [ ] Historical workout tracking and analytics
+
+## Next Steps (Recommended)
+
+**High Priority:**
+1. **Workout Export** — Add .ZWO file export for Zwift compatibility
+2. **Pool Hours Integration** — Check Toronto pool hours and suggest swim times accordingly
+3. **Template System** — Save and reuse training plan templates
+
+**Medium Priority:**
+4. **Notifications** — Push notifications for upcoming workouts (browser push or email)
+5. **Historical Analytics** — Track completed workouts and adjust future plans
+6. **Multi-Calendar Support** — Add Apple Calendar, Outlook, etc. via abstraction layer
+
+**Low Priority:**
+7. **Holiday Calendar** — Integration with holiday calendars for better scheduling
+8. **Multi-User Support** — Shared calendars for teams/clubs
+
+## UI Features
+
+The frontend includes:
+- **Planning Interface**: Unified text input for generating new plans or modifying existing ones
+- **Tabbed Navigation**: Switch between "Plan & Modify" and "Calendar View"
+- **Proposals System**: Review and approve/reject workout proposals with visual diffs
+- **Calendar Week View**: Google Calendar-style visual representation of the week
+- **Events Table**: List all events with weather badges and reset functionality
+- **Event Details Modal**: View full workout details
+- **Weather Integration**: Visual weather badges for all workouts
+- **Responsive Design**: Modern, sleek UI with Figtree font and Tailwind CSS
 
 ---
 
