@@ -120,18 +120,66 @@ export async function deleteEventFromTrainingCalendar(eventId: string) {
   return { ok: true };
 }
 
-export async function listTrainingCalendarEvents(params?: { timeMinIso?: string; timeMaxIso?: string; q?: string }) {
+export async function listTrainingCalendarEvents(params?: { timeMinIso?: string; timeMaxIso?: string; q?: string; maxResults?: number }) {
   if (!TRAINING_CALENDAR_ID) throw new Error('TRAINING_CALENDAR_ID not set');
   const calendar = getUserCalendarClient();
-  const resp = await calendar.events.list({
-    calendarId: TRAINING_CALENDAR_ID,
-    timeMin: params?.timeMinIso,
-    timeMax: params?.timeMaxIso,
-    q: params?.q,
-    singleEvents: true,
-    orderBy: 'startTime'
-  });
-  return resp.data.items || [];
+  
+  const allEvents: any[] = [];
+  let pageToken: string | undefined = undefined;
+  const maxResults = params?.maxResults || 20;
+  
+  // If no timeMin provided, default to 30 days ago to include past events
+  let timeMin = params?.timeMinIso;
+  if (!timeMin) {
+    const pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - 30);
+    timeMin = pastDate.toISOString();
+  }
+  
+  do {
+    const requestParams: any = {
+      calendarId: TRAINING_CALENDAR_ID,
+      timeMin: timeMin,
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 250, // Google Calendar max per page
+      pageToken: pageToken
+    };
+    
+    if (params?.timeMaxIso) {
+      requestParams.timeMax = params.timeMaxIso;
+    }
+    if (params?.q) {
+      requestParams.q = params.q;
+    }
+    
+    const resp = await calendar.events.list(requestParams);
+    
+    const items = resp.data.items || [];
+    console.log(`[listTrainingCalendarEvents] Page ${pageToken ? 'next' : 'first'}: received ${items.length} events, total so far: ${allEvents.length + items.length}`);
+    allEvents.push(...items);
+    
+    // Check if there are more pages
+    pageToken = resp.data.nextPageToken || undefined;
+    console.log(`[listTrainingCalendarEvents] Has next page: ${!!pageToken}, collected: ${allEvents.length}, target: ${maxResults}`);
+    
+    // Stop if we've collected enough or no more pages
+    if (allEvents.length >= maxResults || !pageToken) break;
+  } while (pageToken);
+  
+  const finalEvents = allEvents.slice(0, maxResults);
+  console.log(`[listTrainingCalendarEvents] Returning ${finalEvents.length} events (requested ${maxResults})`);
+  console.log(`[listTrainingCalendarEvents] Full events array:`, JSON.stringify(finalEvents.map((e: any) => ({
+    id: e.id,
+    summary: e.summary,
+    start: e.start?.dateTime || e.start?.date,
+    end: e.end?.dateTime || e.end?.date,
+    created: e.created,
+    updated: e.updated,
+    status: e.status
+  })), null, 2));
+  
+  return finalEvents;
 }
 
 export async function fetchPrimaryBusy(timeMinIso: string, timeMaxIso: string) {
