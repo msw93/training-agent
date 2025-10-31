@@ -24,6 +24,14 @@ GOOGLE_CLIENT_SECRET=...
 GOOGLE_REDIRECT_URI=http://localhost:4100/api/calendar/oauth2callback
 TRAINING_CALENDAR_ID=your-training-calendar-id@group.calendar.google.com
 DEFAULT_TIMEZONE=America/Toronto
+WEATHER_LOCATION=Toronto,CA (optional, defaults to Toronto - uses Open-Meteo, no API key needed!)
+OPENAI_API_KEY=... (optional, for LLM planner)
+OPENAI_MODEL=gpt-4o-mini (optional, default model)
+# Model recommendations:
+# - gpt-4o-mini (default): Fast, cheap, good for structured JSON generation
+# - gpt-4o: Better reasoning and JSON adherence, slightly slower/more expensive
+# - gpt-4-turbo: Good balance of speed and quality
+# Note: Use gpt-4o or newer models for better instruction following and JSON structure compliance
 ```
 
 2) Start API
@@ -62,6 +70,12 @@ Tokens are persisted to `api/tokens.json` (dev only).
 
 - `POST /api/llm/plan` — input: `{ "prompt": "Plan next week; prefer long ride Saturday, long run Friday." }` → output: create proposals + combined diff. Uses a rule-based fallback planner (no external API). Future: OpenAI via `OPENAI_API_KEY`.
 
+## Weather endpoints
+
+- `POST /api/weather/check` — Check weather for multiple workouts. Input: `{ "workouts": [{ "title": "...", "description": "...", "start_local": "..." }] }`. Returns weather forecasts for each workout.
+- `POST /api/weather/check-single` — Check weather for a single workout.
+- `POST /api/weather/reschedule-bad-weather` — Auto-generate reschedule proposals for workouts with bad weather conditions.
+
 ### LLM configuration
 
 - Optional environment variables (in `api/.env`):
@@ -90,7 +104,7 @@ If `OPENAI_API_KEY` is present, the planner uses OpenAI; otherwise it falls back
 - [x] Description validator (duration, targets, intervals, notes, TSS, kcal)
 - [x] Weekly "Plan" endpoint to generate multi-event proposals + combined diff (LLM-powered)
 - [x] Natural-language modify-day/week endpoint (LLM-powered with approval workflow)
-- [ ] Weather commute stub (API, daily check, make-up mileage proposal)
+- [x] Weather integration (OpenWeatherMap API, visual forecasts, bad weather detection for outdoor workouts)
 - [ ] Holiday and Toronto pool hours stubs
 - [ ] Notifications stub (push)
 - [ ] Exporters (.ZWO etc.)

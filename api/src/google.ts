@@ -79,6 +79,40 @@ export function tokensExist() {
   return !!TEMP_TOKEN_STORE.tokens;
 }
 
+// Convert ISO string to RFC3339 format in local timezone (without timezone offset)
+// Google Calendar API expects either:
+// 1. RFC3339 with timezone offset (then timeZone is ignored)
+// 2. Local datetime without offset (then timeZone is used)
+// We use option 2: strip timezone and let Google interpret it in DEFAULT_TIMEZONE
+function normalizeISOForGoogleCalendar(iso: string): string {
+  // If ISO string already has timezone offset, extract the datetime part
+  // Example: "2025-01-20T07:00:00-05:00" -> "2025-01-20T07:00:00"
+  // Example: "2025-01-20T12:00:00.000Z" -> convert from UTC to local, then strip offset
+  
+  // Check if it's UTC (ends with Z)
+  if (iso.endsWith('Z')) {
+    // Parse as UTC and convert to local timezone
+    const date = new Date(iso);
+    // Format as YYYY-MM-DDTHH:MM:SS (no timezone, Google will use timeZone param)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  }
+  
+  // If it has timezone offset (e.g., -05:00), extract just the datetime part
+  const match = iso.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+  if (match) {
+    return match[1];
+  }
+  
+  // Fallback: return as-is if we can't parse
+  return iso;
+}
+
 export async function createEventOnTrainingCalendar(event: {
   summary: string;
   description: string;
@@ -87,13 +121,20 @@ export async function createEventOnTrainingCalendar(event: {
 }) {
   if (!TRAINING_CALENDAR_ID) throw new Error('TRAINING_CALENDAR_ID not set');
   const calendar = getUserCalendarClient();
+  
+  // Normalize ISO strings: strip timezone info so Google uses the timeZone parameter
+  const startDateTime = normalizeISOForGoogleCalendar(event.startIso);
+  const endDateTime = normalizeISOForGoogleCalendar(event.endIso);
+  
+  console.log(`[createEventOnTrainingCalendar] Converting times: ${event.startIso} -> ${startDateTime} (timezone: ${DEFAULT_TIMEZONE})`);
+  
   const response = await calendar.events.insert({
     calendarId: TRAINING_CALENDAR_ID,
     requestBody: {
       summary: event.summary,
       description: event.description,
-      start: { dateTime: event.startIso, timeZone: DEFAULT_TIMEZONE },
-      end: { dateTime: event.endIso, timeZone: DEFAULT_TIMEZONE }
+      start: { dateTime: startDateTime, timeZone: DEFAULT_TIMEZONE },
+      end: { dateTime: endDateTime, timeZone: DEFAULT_TIMEZONE }
     }
   });
   return response.data;
@@ -107,8 +148,16 @@ export async function updateEventOnTrainingCalendar(eventId: string, updates: Pa
   if (!body) throw new Error('Event not found');
   if (updates.summary) body.summary = updates.summary;
   if (updates.description) body.description = updates.description;
-  if (updates.startIso) body.start = { dateTime: updates.startIso, timeZone: DEFAULT_TIMEZONE };
-  if (updates.endIso) body.end = { dateTime: updates.endIso, timeZone: DEFAULT_TIMEZONE };
+  if (updates.startIso) {
+    const startDateTime = normalizeISOForGoogleCalendar(updates.startIso);
+    console.log(`[updateEventOnTrainingCalendar] Converting start time: ${updates.startIso} -> ${startDateTime} (timezone: ${DEFAULT_TIMEZONE})`);
+    body.start = { dateTime: startDateTime, timeZone: DEFAULT_TIMEZONE };
+  }
+  if (updates.endIso) {
+    const endDateTime = normalizeISOForGoogleCalendar(updates.endIso);
+    console.log(`[updateEventOnTrainingCalendar] Converting end time: ${updates.endIso} -> ${endDateTime} (timezone: ${DEFAULT_TIMEZONE})`);
+    body.end = { dateTime: endDateTime, timeZone: DEFAULT_TIMEZONE };
+  }
   const updateResp = await calendar.events.update({ calendarId: TRAINING_CALENDAR_ID, eventId, requestBody: body });
   return updateResp.data;
 }

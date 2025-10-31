@@ -69,3 +69,46 @@ export async function llmModify(instruction: string) {
   if (!res.ok) throw new Error(`LLM modify failed: ${res.status}`);
   return res.json();
 }
+
+export interface WeatherForecast {
+  date: string;
+  temperature: number;
+  condition: string;
+  description: string;
+  icon: string;
+  precipitation: number;
+  windSpeed: number;
+  isOutdoor: boolean;
+  isBadWeather: boolean;
+  recommendation?: 'proceed' | 'reschedule' | 'indoor_alternative';
+}
+
+export async function checkWorkoutsWeather(workouts: Array<{ title: string; description: string; start_local: string }>) {
+  const res = await fetch(`${API_BASE}/weather/check`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workouts })
+  });
+  if (!res.ok) throw new Error(`Weather check failed: ${res.status}`);
+  return res.json();
+}
+
+export async function checkSingleWorkoutWeather(title: string, description: string, start_local: string) {
+  const res = await fetch(`${API_BASE}/weather/check-single`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, description, start_local })
+  });
+  if (!res.ok) throw new Error(`Weather check failed: ${res.status}`);
+  return res.json();
+}
+
+export async function rescheduleBadWeather(workouts: Array<{ title: string; description: string; start_local: string }>) {
+  const res = await fetch(`${API_BASE}/weather/reschedule-bad-weather`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workouts })
+  });
+  if (!res.ok) throw new Error(`Weather reschedule failed: ${res.status}`);
+  return res.json();
+}

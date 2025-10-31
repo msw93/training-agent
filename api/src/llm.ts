@@ -291,6 +291,10 @@ Start planning from next Monday ${nextMondayDate}. Every workout MUST have a com
 
 ${requestedCount ? `IMPORTANT: Return EXACTLY ${requestedCount} workout items in your JSON array. Verify the count before finalizing your response.` : ''}`;
         const reqPayload: any = {
+          // Model recommendations:
+          // - gpt-4o-mini: Fast, cheap, good for most cases (default)
+          // - gpt-4o: Better reasoning and JSON adherence, slightly slower
+          // - gpt-4-turbo: Good balance (if available)
           model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
           messages: [
             { role: 'system', content: system },
@@ -435,6 +439,10 @@ CRITICAL RULES:
 Return the modifications as a JSON array:`;
 
         const reqPayload: any = {
+          // Model recommendations:
+          // - gpt-4o-mini: Fast, cheap, good for most cases (default)
+          // - gpt-4o: Better reasoning and JSON adherence, slightly slower
+          // - gpt-4-turbo: Good balance (if available)
           model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
           messages: [
             { role: 'system', content: system },

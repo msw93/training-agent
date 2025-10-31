@@ -23,6 +23,7 @@ import { makePlanner } from './llm';
 import { proposeCreateInternal } from './approvals';
 import { rescheduleToValidSlot, findAvailableSlot, calculateDuration } from './scheduler';
 import { checkEventSpacing } from './spacing';
+import { checkWorkoutWeather, checkWorkoutsWeather, isOutdoorWorkout } from './weather';
 
 dotenv.config();
 
@@ -640,7 +641,140 @@ app.get('/api/llm/status', (req, res) => {
   });
 });
 
-// TODO: Add more (weather, holidays, notification etc.)
+// Weather endpoints
+app.post('/api/weather/check', async (req, res) => {
+  try {
+    const { workouts } = req.body || {};
+    if (!workouts || !Array.isArray(workouts)) {
+      return res.status(400).json({ message: 'Missing or invalid workouts array' });
+    }
+    
+    const weatherResults = await checkWorkoutsWeather(workouts);
+    
+    // Convert Map to object for JSON response
+    const results: Record<string, any> = {};
+    weatherResults.forEach((forecast, startLocal) => {
+      results[startLocal] = forecast;
+    });
+    
+    return res.status(200).json({ weather: results });
+  } catch (e: any) {
+    console.error('[Weather] Error checking weather:', e.message);
+    return res.status(500).json({ message: 'Weather check failed', error: e.message });
+  }
+});
+
+app.post('/api/weather/check-single', async (req, res) => {
+  try {
+    const { title, description, start_local } = req.body || {};
+    if (!title || !start_local) {
+      return res.status(400).json({ message: 'Missing title or start_local' });
+    }
+    
+    const forecast = await checkWorkoutWeather(title, description || '', start_local);
+    
+    if (!forecast) {
+      return res.status(404).json({ message: 'Weather forecast not available' });
+    }
+    
+    return res.status(200).json({ weather: forecast });
+  } catch (e: any) {
+    console.error('[Weather] Error checking single workout weather:', e.message);
+    return res.status(500).json({ message: 'Weather check failed', error: e.message });
+  }
+});
+
+// Auto-reschedule endpoint for bad weather
+app.post('/api/weather/reschedule-bad-weather', async (req, res) => {
+  try {
+    const { workouts } = req.body || {};
+    if (!workouts || !Array.isArray(workouts)) {
+      return res.status(400).json({ message: 'Missing or invalid workouts array' });
+    }
+    
+    // Check weather for all workouts
+    const weatherResults = await checkWorkoutsWeather(workouts);
+    
+    // Filter workouts with bad weather that need rescheduling
+    const badWeatherWorkouts: Array<{
+      title: string;
+      description: string;
+      start_local: string;
+      weather: any;
+    }> = [];
+    
+    for (const workout of workouts) {
+      const forecast = weatherResults.get(workout.start_local);
+      if (forecast && forecast.isOutdoor && forecast.isBadWeather) {
+        badWeatherWorkouts.push({
+          ...workout,
+          weather: forecast
+        });
+      }
+    }
+    
+    // Generate reschedule proposals for bad weather workouts
+    const proposals: Array<{ workout: any; newTime: string; reason: string }> = [];
+    
+    // Get existing events for conflict checking
+    const existingGcalEvents = await listTrainingCalendarEvents();
+    const existingEvents = existingGcalEvents.map((e: any) => ({
+      start_local: e.start?.dateTime || e.start?.date,
+      end_local: e.end?.dateTime || e.end?.date,
+      summary: e.summary || ''
+    }));
+    
+    for (const workout of badWeatherWorkouts) {
+      // Calculate duration from original workout
+      const startDate = new Date(workout.start_local);
+      const endDateStr = workouts.find(w => w.start_local === workout.start_local && w !== workout)?.start_local;
+      // If we can't find end date from other workouts, calculate from duration
+      const duration = calculateDuration(workout.start_local, endDateStr || workout.start_local) || 60; // Default 1 hour
+      
+      // Try to find next available slot using scheduler
+      const workoutToReschedule = {
+        title_short: workout.title,
+        start_local: workout.start_local,
+        end_local: workout.start_local, // Will be recalculated
+        description: workout.description,
+        duration_minutes: duration
+      };
+      
+      const rescheduled = await findAvailableSlot(workoutToReschedule, existingEvents);
+      
+      if (rescheduled) {
+        proposals.push({
+          workout,
+          newTime: rescheduled.start_local,
+          reason: `Bad weather: ${workout.weather.description} (${workout.weather.temperature}°C, ${workout.weather.precipitation > 0 ? workout.weather.precipitation.toFixed(1) + 'mm rain' : 'high winds'})`
+        });
+      } else {
+        // Fallback: just suggest next day
+        const currentDate = new Date(workout.start_local);
+        const nextDay = new Date(currentDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        nextDay.setHours(7, 0, 0, 0);
+        
+        proposals.push({
+          workout,
+          newTime: nextDay.toISOString(),
+          reason: `Bad weather: ${workout.weather.description} - Suggested next day`
+        });
+      }
+    }
+    
+    return res.status(200).json({
+      badWeatherCount: badWeatherWorkouts.length,
+      proposals,
+      weather: Object.fromEntries(weatherResults)
+    });
+  } catch (e: any) {
+    console.error('[Weather] Error rescheduling bad weather:', e.message);
+    return res.status(500).json({ message: 'Weather reschedule failed', error: e.message });
+  }
+});
+
+// TODO: Add more (holidays, notification etc.)
 
 app.listen(port, () => {
   console.log(`Express API listening at http://localhost:${port}`);
